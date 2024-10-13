@@ -1,7 +1,7 @@
 package com.trivaris
 
 import io.ktor.application.*
-import io.ktor.http.*
+import io.ktor.html.*
 import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.server.engine.embeddedServer
@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.*
+import kotlinx.html.*
 
 val sessionName = "serversession"
 val checkCommand = listOf("sh", "-c", "screen -list | grep $sessionName")
@@ -20,15 +21,37 @@ fun main() {
 
     embeddedServer(Netty, port = port) {
         routing {
-            get("/run_server") {
-                launch(Dispatchers.IO) {
-                    executeBashCommand()
+            get("/") {
+                val action = call.parameters["action"]
+
+                if (action == "start") {
+                    launch(Dispatchers.IO) {
+                        executeBashCommand()
+                    }
+
+                    // Redirect to /run_server after starting the server
+                    call.respondRedirect("/")
+                    return@get // Exit the function after redirecting
                 }
 
-                val serverStatus = getServerStatus()
                 val currentDate = Date()
-                call.respondText("Server Status: $serverStatus\nCurrent Date: $currentDate", ContentType.Text.Plain)
+                val serverRunning = isServerRunning()
+                call.respondHtml {
+                    body {
+                        h1 { +"Server Status: ${if (serverRunning)  "Running" else "Not Running"}" }
+                        p { +"Current Date: $currentDate" }
+
+                        if (!serverRunning) {
+                            a(href = "/run_server?action=start") {
+                                button(type = ButtonType.submit) {
+                                    +"Start Server"
+                                }
+                            }
+                        }
+                    }
+                }
             }
+
         }
     }.start(wait = true)
 }
@@ -60,9 +83,8 @@ fun executeBashCommand() {
     }
 }
 
-fun getServerStatus(): String {
+fun isServerRunning(): Boolean {
     return try {
-
         val checkProcess = ProcessBuilder(checkCommand)
             .redirectErrorStream(true)
             .start()
@@ -70,11 +92,11 @@ fun getServerStatus(): String {
         val checkInput = BufferedReader(InputStreamReader(checkProcess.inputStream))
 
         if (checkInput.readLine() != null) {
-            "Running"
+            true
         } else {
-            "Not Running"
+            false
         }
     } catch (e: Exception) {
-        "Error checking server status: ${e.message}"
+        false
     }
 }
